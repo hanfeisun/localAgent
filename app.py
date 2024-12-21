@@ -19,7 +19,7 @@ except FileNotFoundError:
     exit(1)
 
 # Configure the model
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
 def clean_code_response(text):
     # Remove markdown code block if present
