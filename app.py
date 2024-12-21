@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request
 import google.generativeai as genai
 import os
 import subprocess
@@ -6,10 +6,8 @@ import tempfile
 import time
 import re
 from pathlib import Path
-from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # For session management
 
 # Initialize Gemini API
 api_key_path = os.path.expanduser("~/api_key")
@@ -21,8 +19,7 @@ except FileNotFoundError:
     exit(1)
 
 # Configure the model
-MODEL_NAME = "Gemini 2.0 Flash Experimental"
-model = genai.GenerativeModel('gemini-2.0-flash-exp')
+model = genai.GenerativeModel('gemini-pro')
 
 def clean_code_response(text):
     # Remove markdown code block if present
@@ -30,39 +27,38 @@ def clean_code_response(text):
     text = re.sub(r'\n```$', '', text)     # Remove closing ```
     return text.strip()
 
-def run_code(code):
-    # Create temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', dir='/tmp', delete=False) as f:
-        f.write(code)
-        temp_file = f.name
+def run_in_iterm(command, temp_file):
+    # Create a temporary file to store the output
+    output_file = f"{temp_file}.output"
     
+    # Create AppleScript to run the command in iTerm and capture output
+    apple_script = f'''
+        tell application "iTerm2"
+            create window with default profile
+            tell current session of current window
+                write text "python3 \\"{temp_file}\\" > \\"{output_file}\\" 2>&1"
+            end tell
+        end tell
+    '''
+    
+    # Run the AppleScript
+    subprocess.run(['osascript', '-e', apple_script])
+    
+    # Wait a bit for the command to complete
+    time.sleep(2)
+    
+    # Read the output if file exists
     try:
-        # Run the code and capture output
-        result = subprocess.run(['python3', temp_file], 
-                              capture_output=True, 
-                              text=True, 
-                              timeout=10)  # 10 second timeout
-        output = result.stdout
-        if result.stderr:
-            output += "\nErrors:\n" + result.stderr
+        with open(output_file, 'r') as f:
+            output = f.read()
+        # Clean up output file
+        os.remove(output_file)
         return output
-    except subprocess.TimeoutExpired:
-        return "Execution timed out after 10 seconds"
-    except Exception as e:
-        return f"Error executing code: {str(e)}"
-    finally:
-        # Clean up temporary file
-        try:
-            os.remove(temp_file)
-        except:
-            pass
+    except FileNotFoundError:
+        return "Output not available yet. Check iTerm2 window for results."
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Initialize history in session if it doesn't exist
-    if 'history' not in session:
-        session['history'] = []
-    
     if request.method == 'POST':
         try:
             prompt = request.form['prompt']
@@ -81,24 +77,14 @@ IMPORTANT RULES:
 - Use UTF-8 encoding for file operations
 - If using GUI, use native MacOS solutions (tkinter, PyQt)
 
-PATH HANDLING RULES:
-- When using home directory with "~", ALWAYS use os.path.expanduser() or Path.home()
-- INCORRECT: Path("~/Downloads")  # This won't expand the tilde
-- CORRECT: Path.home() / "Downloads"  # This is the proper way
-- CORRECT: Path(os.path.expanduser("~/Downloads"))  # This also works
-- For temporary files, use the /tmp directory
-- For current directory, use Path.cwd() or os.getcwd()
-
 Example of correct output format:
-from pathlib import Path
-downloads = Path.home() / "Downloads"
-print(list(downloads.glob("*.txt")))
+import os
+print('Hello World')
 
 Example of INCORRECT output format:
 ```python
-from pathlib import Path
-downloads = Path("~/Downloads")  # Won't work!
-print(list(downloads.glob("*.txt")))
+import os
+print('Hello World')
 ```
 """
             
@@ -111,36 +97,23 @@ print(list(downloads.glob("*.txt")))
             # Extract and clean the code from the response
             code = clean_code_response(response.text)
             
-            # Run the code and get output
-            output = run_code(code)
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', dir='/tmp', delete=False) as f:
+                f.write(code)
+                temp_file = f.name
             
-            # Add to history with timestamp
-            history_item = {
-                'prompt': prompt,
-                'code': code,
-                'output': output,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'model': MODEL_NAME
-            }
-            session['history'].insert(0, history_item)  # Add to beginning of history
-            
-            # Keep only the last 20 items in history
-            if len(session['history']) > 20:
-                session['history'] = session['history'][:20]
-            
-            session.modified = True  # Ensure session is saved
+            # Run in iTerm and get output
+            output = run_in_iterm(code, temp_file)
             
             return render_template('index.html', 
-                                history=session['history'],
-                                model_name=MODEL_NAME)
+                                result=f"Code saved to {temp_file} and executed in iTerm2.",
+                                code=code,
+                                output=output)
             
         except Exception as e:
-            return render_template('index.html', 
-                                error=str(e),
-                                history=session['history'],
-                                model_name=MODEL_NAME)
+            return render_template('index.html', error=str(e))
     
-    return render_template('index.html', history=session['history'], model_name=MODEL_NAME)
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
