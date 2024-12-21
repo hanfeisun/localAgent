@@ -22,8 +22,8 @@ This project was built using [Cursor](https://cursor.sh/), an AI-first code edit
 
 1. Clone this repository:
 ```bash
-git clone <repository-url>
-cd <repository-name>
+git clone https://github.com/hanfeisun/localAgent.git
+cd localAgent
 ```
 
 2. Install the required dependencies:
@@ -86,6 +86,14 @@ http://127.0.0.1:5000
 - Requires iTerm2 for code execution
 - Generated code is saved in the `/tmp` directory
 - Output is captured and displayed in real-time
+
+## Contributing
+
+Feel free to open issues or submit pull requests if you have suggestions for improvements.
+
+## License
+
+This project is open source and available under the MIT License.
 
 ## Attribution
 
